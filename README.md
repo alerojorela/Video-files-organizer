@@ -19,8 +19,10 @@ title  year directors - actors [VO]
 
 ## Requirements
 
+On some virtual environment (recommended):
+
 ```
-import pandas tabulate IMDbPY
+pip install pandas tabulate IMDbPY
 ```
 
 ## Usage
