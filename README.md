@@ -17,6 +17,12 @@ title  year directors - actors [VO]
 
 6. fills a `.tsv` file (creates it or appends info) with movie info extracted from IMDb
 
+## Requirements
+
+```
+import pandas tabulate IMDbPY
+```
+
 ## Usage
 
 | file            | action                                                       | arguments                |
