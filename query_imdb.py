@@ -6,9 +6,15 @@ Usage: search_movie "movie title"
 Search for the given title and print the results.
 
 pip install IMDbPY pandas tabulate
+
+
+IMDbPY is now cinemagoer
+
+This package has been renamed. Use pip install cinemagoer instead.
 """
 
 import sys
+import re
 import webbrowser
 
 import json
@@ -17,7 +23,7 @@ from io import StringIO
 from tabulate import tabulate
 
 # FROM PROJECT
-import utils
+import file_utils
 
 # Import the IMDbPY package.
 try:
@@ -39,75 +45,147 @@ bg = {'black': '\033[40m', 'red': '\033[41m', 'green': '\033[42m', 'yellow': '\0
 headings = ['ID', 'YEAR', 'KIND', 'NAME', 'URL']
 
 
-def SearchFilm(query: str, kind_filter='movie'):
-    """
-    manages ambiguity by CLI user input
-    :param query:
-    :return:
-    """
+def get_url(movie):
+    # def get_url(id: int):
+    # url = ia.get_imdbURL(movie)
+    return f'https://www.imdb.com/title/tt{movie.movieID}'
+
+
+def search_movie(query):
     try:
         # Do the search, and get the results (a list of Movie objects).
         results = ia.search_movie(query)
+        return results
     except imdb.IMDbError as e:
         print("Probably you're not connected to Internet.  Complete error report:")
         print(e)
         sys.exit(3)
 
+
+def id_from_url(url):
+    match = re.search(r'/tt(\d+)/?', url)
+    if match:
+        return match.group(1)
+
+
+def SearchFilm(properties: str, kind_filter: str=None, lazy=False):
+    """
+    manages ambiguity by CLI user input
+    :param query:
+    :return:
+    """
+
+    # filter attributes
+    # 1)
+    """
+    select_properties = ['year', 'director']
+    # filtered_properties = {key: value for key, value in properties.items() if key in select_properties and value}
+    # query = ' '.join([str(_) for _ in filtered_properties.values()])
+    query = ' '.join([str(value) for key, value in properties.items() if key in select_properties and value])
+    results = search_movie(query)
+    """
+    results = None
+    # 2)
+    if not results:
+        select_properties = ['year', 'title']  # IMPORTANT: Order
+        # query = ' '.join([str(properties.get(key)) for key in select_properties])
+        query = ' '.join([str(properties[key]) for key in select_properties if properties.get(key)])
+        # query = ' '.join([str(value) for key, value in properties.items() if key in select_properties and value])
+        results = search_movie(query)
+    # 3) MANUAL
+
+    if not results:
+        if lazy:
+            return
+        id = None
+        while not id:
+            answer = input(fg['yellow'] + "SEARCH UNSUCCESSFULL (write 'pass' to ignore; or insert imdb url: " + fg['white'])
+            if answer.lower() == 'pass':
+                print(fg['red'] + "PASS" + fg['white'])
+                return
+            # todo pass
+            id = id_from_url(answer)
+        print('id:', id)            
+        data = FillData(id)
+        return data
+
     # Print the results.
-    print('\n' + '*' * 80 + '\n' + fg['yellow'] + query + fg['white'] + ' (%s result%s)' % (len(results),
-                                                                                            ('', 's')[
-                                                                                                len(results) != 1]))
+    print('*' * 80 + '\n' + fg['yellow'] + query + fg['white'] + ' (%s result%s)' % (
+        len(results), ('', 's')[int(bool(results))]))
 
     new_table = []
     # Extracting information
-    for index, movie in enumerate(results):
+    for movie in results:
         # movie.movieID movie.keys
-        id = movie.movieID
-        if id != ia.get_imdbID(movie):
-            print(fg['red'] + 'ERROR ' * 100 + fg['white'])
-
         # filter
         kind = movie['kind']
-        if not kind_filter or kind == kind_filter:  # filter out non movies
+        if not kind_filter or kind_filter == kind:  # filter out non movies
             year = movie.get('year', '')
-            new_table.append([id, year, kind, movie['title'], ia.get_imdbURL(movie)])
+            url = get_url(movie)
+
+            if not new_table:  # first item
+                # the chances are high for the first film to be the one we're looking for
+                # so, launch webbrowser in order to allow informed confirmation by the user
+                # this won't work from a different environment
+                # webbrowser.open_new_tab(url)
+
+                # show first movie detailed info
+                # first_item = df.iloc[0]
+                # data = FillData(first_item['ID'])
+                data = FillData(movie.movieID)
+                df_first = pd.DataFrame([{'Year': data['year'],
+                                          'Directors': ", ".join(data['directors']),
+                                          'Actors': ", ".join(data['actors'])
+                                          }])
+
+                if data['directors']:
+                    directors = ', '.join(data['directors'])
+                    print(data['year'], directors, 'VS.')
+                    print(properties.get('year'), properties.get('director'))
+                    # if data['year'] == properties.get('year') and data['directors'] and data['directors'][0] == properties.get('director'):
+                    if data['year'] == properties.get('year') and directors == properties.get('director'):                    
+                        print('🥳🥳 SAME YEAR & DIRECTORS 🥳🥳')
+                        return data
+
+                print('\nFirst movie info:')
+                print(tabulate(df_first, headers='keys', tablefmt='psql'))
+                if not lazy:
+                    webbrowser.open_new_tab(url)
+
+            new_table.append([movie.movieID, year, kind, movie['title'], url])
+
+        if lazy:
+            return  # lazy: avoid disambiguation of films
 
     if new_table:
         df = pd.DataFrame(new_table, columns=headings)
 
-        # the chances are high for the first film to be the one we're looking for
-        # so, show more info about the first item
-        first_id = df.iloc[0]['ID']
-        data = FillData(first_id)
-        print('\nFirst movie info:')
-        df_first = pd.DataFrame([{'Year': data['year'],
-                                  'Directors': ", ".join(data['directors']),
-                                  'Actors': ", ".join(data['actors'])
-                                  }])
-        print(tabulate(df_first, headers='keys', tablefmt='psql'))
-
-        # we launch the first item webpage in order to allow informed confirmation by the user
-        first_movie = ia.get_movie(str(first_id))
-        # webbrowser.open(ia.get_imdbURL(first_movie), new=2)
-
-        # show all
+        # show all short info
         print()
         print(tabulate(df, headers='keys', tablefmt='psql'))
 
         indices = df.index.to_list()
-
         selection = None
         while selection not in indices:
-            answer = input('Choose (ENTER for first one, the one shown in web browser): ')
-            if not answer.strip():
+            answer = input("Choose (ENTER for first one, the one shown in web browser; 'pass' to ignore; or a imdb url): ").strip()
+            if answer:
+                if answer.lower() == 'pass':
+                    print(fg['red'] + "PASS" + fg['white'])
+                    return None
+                elif id_from_url(answer):
+                    selectedId = id_from_url(answer)
+                    return FillData(selectedId)
+                else:
+                    try:
+                        selection = int(answer)
+                        selectedId = df.iloc[selection]['ID']
+                    except:
+                        print(fg['red'] + "it's not a valid number" + fg['white'])
+            else:  # empty string '' just enter
                 selection = 0
-                break
-            try:
-                selection = int(answer)
-            except:
-                print(fg['red'] + "it's not a valid number" + fg['white'])
-
-        selectedId = df.iloc[selection]['ID']
+                selectedId = df.iloc[selection]['ID']
+                # break
+        
         data = FillData(selectedId)
         return data
 
@@ -115,18 +193,20 @@ def SearchFilm(query: str, kind_filter='movie'):
 def FillData(id, directors_max=2, actors_max=4):
     movie = ia.get_movie(str(id))
     # critical conditions:
-    assert movie.get('cast'), "No actors found"
+    # sometimes the first item has no actors (some episodes...)
+    # assert movie.get('cast'), "No actors found"
     # assert 'director' in movie and movie['director'], "No directors found"
     directors = movie.get('director', [])
+    actors = movie.get('cast', [])
 
     return {'id': id,
-            'url': ia.get_imdbURL(movie),
+            'url': get_url(movie),
             'rating': movie.get('rating'),
             'year': movie.get('year'),
             'title': movie.get('title'),  # english title
             'original title': movie.get('original title'),
             'directors': [_['name'] for _ in directors[:directors_max]],
-            'actors': [_['name'] for _ in movie['cast'][:actors_max]],
+            'actors': [_['name'] for _ in actors[:actors_max]],
             }
 
 
@@ -184,7 +264,7 @@ if __name__ == "__main__":
         print('  %s "movie title"' % sys.argv[0])
         sys.exit(2)
 
-    print('QUERY: ' + utils.fg['yellow'] + sys.argv[1] + utils.fg['white'] + '\n')
+    print('QUERY: ' + file_utils.fg['yellow'] + sys.argv[1] + file_utils.fg['white'] + '\n')
     query = sys.argv[1]
     data = SearchFilm(query)
     print(json.dumps(data, indent=3))

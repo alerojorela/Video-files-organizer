@@ -1,2 +1,5 @@
 .gitignore
-OFFLINE
+**/OFFLINE/
+**/__pycache__/
+**/.ipynb_checkpoints/
+offline*
